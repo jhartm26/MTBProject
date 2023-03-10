@@ -1,10 +1,10 @@
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8000;
 const app = express();
 
-app.get('/', (req: Request, res: Response) => {
+app.get('/', (_: Request, res: Response) => {
     res.status(200).sendFile(path.join(__dirname, './public/html/index.html'));
 });
 
