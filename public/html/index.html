@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<head>
+    <title>RoflWaffle</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tilt+Neon&display=swap');
+
+        html, body {
+            margin: 0;
+            height: 100%;
+        }
+
+        #spinner {
+            animation-name: spin, depth;
+            animation-timing-function: linear;
+            animation-iteration-count: infinite;
+            animation-duration: 10s;
+            text-align: center;
+            font-size: 15rem;
+        }
+
+        @keyframes spin {
+            from { transform: rotateY(0deg); }
+            to { transform: rotateY(-360deg); }
+        }
+
+        @keyframes depth {
+            0% { text-shadow: 0 0 black; }
+            25% { text-shadow: 5px 0 black, 10px 0 black, 15px 0 black, 20px 0 black, 25px 0 black; }
+            50% { text-shadow: 0 0 black; }
+            75% { text-shadow: -5px 0 black, -10px 0 black, -15px 0 black, -20px 0 black, -25px 0 black; }
+            100% { text-shadow: 0 0 black; }
+        }
+    </style>
+</head>
+<body style="height: 100%;">
+    <div style="display: flex; height: 100%; width: 100%; justify-content: center; align-items: center;">
+        <h1 id="spinner" style="font-family: 'Tilt Neon', sans-serif">Waffle</h1>
+    </div>
+</body>

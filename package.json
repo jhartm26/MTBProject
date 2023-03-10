@@ -1,0 +1,40 @@
+{
+  "name": "mtbproject",
+  "description": "Spring 2023 Capstone Project Group #4: We are creating a information transportation system between Bike Trail Twitter Accounts and MTBProject website, we will deliver trail conditions to the bikers that use the trails through MTBProject.",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "npm run remove-old && tsc && npm run copy-resources",
+    "prebuild": "eslint -c .eslintrc --ext .ts --fix ./",
+    "start": "node .",
+    "prestart": "npm run build",
+    "test": "mocha test",
+    "remove-old": "rm -r ./dist || :",
+    "copy-resources": "cp -r ./public ./dist/public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jhartm26/MTBProject.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jhartm26/MTBProject/issues"
+  },
+  "homepage": "https://github.com/jhartm26/MTBProject#readme",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.17",
+    "@typescript-eslint/eslint-plugin": "^5.51.0",
+    "@typescript-eslint/parser": "^5.51.0",
+    "chai": "^4.3.7",
+    "chai-http": "^4.3.0",
+    "eslint": "^8.33.0",
+    "mocha": "^10.2.0",
+    "sinon": "^15.0.1",
+    "source-map-support": "^0.5.21",
+    "typescript": "^4.9.5"
+  }
+}
