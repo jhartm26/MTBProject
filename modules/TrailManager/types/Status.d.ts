@@ -3,7 +3,7 @@ type Status = {
     open?: boolean,
     danger?: string,
     createdOn?: Date,
-    mtbStatus?: string,
+    mtbStatus?: string | MTBStatus,
     conditions?: Conditions
 }
 

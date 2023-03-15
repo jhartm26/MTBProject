@@ -3,10 +3,10 @@ type Trail = {
     mtbID?: string,
     name?: string,
     city?: string,
-    state?: string,
+    state?: string | State,
     centerLatitude?: number,
     centerLongitude?: number,
     lastUpdate?: Date,
-    weather?: string,
-    status?: string
+    weather?: string | Weather,
+    status?: string | Status
 }

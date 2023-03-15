@@ -1,9 +1,33 @@
-import sqlExecute from '../../SQLInterface';
 import crypto from 'crypto';
 import axios from 'axios';
-
 import { Mutex } from 'async-mutex';
 
+import sqlExecute, { sqlObject } from '../../SQLInterface';
+
+const convert = async (toC: sqlObject): Promise<Status> => {
+    return {
+        UUID: toC.UUID,
+        open: toC.open,
+        danger: toC.danger,
+        createdOn: toC.created_on,
+        mtbStatus: (await sqlExecute('SELECT * FROM mtb_statuses WHERE UUID = ?', [toC.mtb_status]))[0].status,
+        conditions: {
+            dry: toC.dry,
+            mostlyDry: toC.mostly_dry,
+            muddy: toC.muddy,
+            someMud: toC.some_mud,
+            snowy: toC.snowy,
+            icy: toC.icy,
+            fallenTrees: toC.fallen_trees
+        }
+    };
+};
+
+/**
+ * Singleton class TrailManager
+ * 
+ * TODO: Test asynchronous safety
+ */
 export default class TrailManager {
     private static instance_: TrailManager;
     private static mutex_ = new Mutex();
@@ -17,21 +41,23 @@ export default class TrailManager {
         return TrailManager.instance_;
     }
 
-    private static async execute_(fn: Function) {
+    private static async execute_(fn: Function): Promise<any> {
         await this.mutex_.waitForUnlock();
         await this.mutex_.acquire();
 
         let res: any = undefined;
+        let error: Error = undefined;
 
         try {
             res = await fn();
         }
         catch (err) {
-            this.mutex_.release();
-            throw err;
+            error = err;
         }
 
         this.mutex_.release();
+
+        if (error) throw error;
 
         return res;
     }
@@ -54,10 +80,10 @@ export default class TrailManager {
                                    conditions: Conditions): Promise<void> {
         try {
             await TrailManager.execute_(async () => {
-                const trails = await sqlExecute(`SELECT *, mtb_id AS mtbID, 
+                const trails = await sqlExecute(`SELECT weather, status,
                                                  center_latitude AS centerLatitude, 
-                                                 center_longitude AS centerLongitude, 
-                                                 last_update AS lastUpdate FROM trails WHERE UUID = ?`, 
+                                                 center_longitude AS centerLongitude 
+                                                 FROM trails WHERE UUID = ?`, 
                                                 [trailUUID]) as Trail[];
                 let trail: Trail;
                 if (trails.length === 1)
@@ -70,7 +96,7 @@ export default class TrailManager {
 
                 const weather = await this.getWeatherData(trail.centerLatitude, trail.centerLongitude);
 
-                let precipitation: string;
+                let precipitation = 'none';
                 if (weather.rain)
                     precipitation = 'rain';
                 else if (weather.snow)
@@ -79,7 +105,7 @@ export default class TrailManager {
                 const newWeather: Weather = {
                     UUID: crypto.randomUUID(),
                     lastReportedTemp: weather.main.temp,
-                    precipitation,
+                    precipitation: precipitation,
                     wind: `${weather.wind.deg}° @ ${weather.wind.speed} MPH`,
                     notes: weather.weather[0]?.main,
                     createdOn: new Date()
@@ -115,11 +141,66 @@ export default class TrailManager {
             });
         }
         catch (err) {
+            console.error(err);
             throw err;
         }
     }
 
-    public async retrieveWeatherHistory(trailUUID: string) {
+    public async retrieveWeatherHistory(trailUUID: string): Promise<Weather[]> {
+        await TrailManager.mutex_.waitForUnlock();
+        const currWeatherUUID = (await sqlExecute('SELECT weather FROM trails WHERE UUID = ?', [trailUUID]))[0]?.weather;
+        const res = await sqlExecute('SELECT weather_UUID AS UUID FROM weather_archive WHERE trail_UUID = ?', [trailUUID]);
 
+        let promArr: Promise<Weather>[] = [sqlExecute(`SELECT UUID, last_reported_temperature AS lastReportedTemp, 
+                                                         precipitation, wind, notes, created_on AS createdOn
+                                                         FROM weather WHERE UUID = ?`, [currWeatherUUID]).then(data => data[0] as Weather)];
+        for (const obj of res) {
+            promArr.push(sqlExecute(`SELECT UUID, last_reported_temperature AS lastReportedTemp, 
+                                     precipitation, wind, notes, created_on AS createdOn
+                                     FROM weather WHERE UUID = ? ORDER BY created_on DESC`, [obj.UUID])
+                        .then(data => data[0] as Weather));
+        }
+
+        return await Promise.all(promArr);
+    }
+
+    public async retrieveStatusHistory(trailUUID: string): Promise<Status[]> {
+        await TrailManager.mutex_.waitForUnlock();
+        const currStatusUUID = (await sqlExecute('SELECT status FROM trails WHERE UUID = ?', [trailUUID]))[0]?.status;
+        const res = await sqlExecute('SELECT status_UUID AS UUID FROM status_archive WHERE trail_UUID = ?', [trailUUID]);
+
+        let promArr: Promise<Status>[] = [sqlExecute('SELECT * FROM status WHERE UUID = ?', [currStatusUUID]).then(async data => {
+            return await convert(data[0]);
+        })];
+
+        for (const obj of res) {
+            promArr.push(sqlExecute('SELECT * FROM status WHERE UUID = ?', [obj.UUID]).then(async data => {
+                return await convert(data[0]);
+            }));
+        }
+
+        return await Promise.all(promArr);
+    }
+
+    public async retrieveTrail(trailUUID: string): Promise<Trail> {
+        await TrailManager.mutex_.waitForUnlock();
+        const res = (await sqlExecute('SELECT * FROM trails WHERE UUID = ?', [trailUUID]))[0];
+
+        const result: Trail = {
+            UUID: res.UUID,
+            mtbID: res.mtb_id,
+            name: res.name,
+            city: res.city,
+            state: (await sqlExecute('SELECT * FROM states WHERE UUID = ?', [res.state]))[0] as State,
+            centerLatitude: res.center_latitude,
+            centerLongitude: res.center_longitude,
+            lastUpdate: res.last_update,
+            weather: (await sqlExecute(`SELECT UUID, last_reported_temperature AS lastReportedTemp, 
+                                       precipitation, wind, notes, created_on AS createdOn
+                                       FROM weather WHERE UUID = ?`, [res.weather]))[0] as Weather,
+            status: await convert((await sqlExecute('SELECT * FROM status WHERE UUID = ?', [res.status]))[0])
+        };
+
+        return result;
     }
 }

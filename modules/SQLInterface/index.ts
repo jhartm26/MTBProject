@@ -6,17 +6,15 @@ import mysql from 'mysql2';
 // Type declarations
 type sqlCache = {
     [index: string]: {
-        results: sqlResponse,
+        results: sqlObject[],
         tablename: string,
         hitCount: number
     }
 }
 
-type sqlObject = {
+export type sqlObject = {
     [index: string]: any
 }
-
-export type sqlResponse = sqlObject[];
 
 let cache: sqlCache = {};
 const maxCache = process.env.MAX_CACHE || 500;
@@ -144,7 +142,7 @@ const checkCache = (cacheStmt: string) => {
  * @param results - The array of results returned from the query
  *
  */
-const addToCache = (cacheStmt: string, tablename: string, results: sqlResponse=undefined) => {
+const addToCache = (cacheStmt: string, tablename: string, results: sqlObject[]=undefined) => {
     if (cacheStmt.toLowerCase().includes('select') && results?.length > 0) {
         cache[cacheStmt] = {
             results,
@@ -168,7 +166,7 @@ const addToCache = (cacheStmt: string, tablename: string, results: sqlResponse=u
  * @returns A promise that resolves into an array of objects that result from the SQL query
  *
  */
-export async function sqlExecute(sql: string, params: any[]=undefined, forceNoCache: boolean=false): Promise<sqlResponse> {
+export async function sqlExecute(sql: string, params: any[]=undefined, forceNoCache: boolean=false): Promise<sqlObject[]> {
     // Temporary solution for db treating dates strangely
     if (params?.length > 0)
         for(let i = 0; i < params.length; i++)
