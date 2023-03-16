@@ -1,6 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
+import axios from 'axios';
+import fs from 'fs';
 dotenv.config();
 
 // Source map support for proper error reporting
@@ -65,7 +67,13 @@ app.use(exprWinston.errorLogger({
     meta: true
 }));
 
+import { load } from 'cheerio';
+import MTBClient from './modules/TrailManager/lib/MTBClient';
+
 app.get('/', async (_: Request, res: Response) => {
+    const t = new MTBClient();
+    await t.waitForInit();
+    await t.authorize();
     let man = TrailManager.getInstance();
 
     const startTime = Date.now();
@@ -85,6 +93,22 @@ app.get('/', async (_: Request, res: Response) => {
 
     console.log(`All 3 functions run in ${(endTime - startTime)/1000} seconds`);
     res.status(200).sendFile(path.join(__dirname, './public/html/index.html'));
+
+    try {
+        fs.writeFileSync('test.json', (await axios.get('https://www.mtbproject.com')).data);
+        const $ = load((await axios.get('https://www.mtbproject.com')).data);
+        const token = $('input[name="_token"]').val();
+        // console.log(await axios.post('https://www.mtbproject.com/conditions/trail/update', {
+        //     'checkin-time': undefined,
+        //     img: 'yellow',
+        //     condition: undefined,
+        //     _token: token,
+        //     id: '7018919'
+        // }));
+    }
+    catch (err) {
+        console.error(err);
+    }
 });
 
 app.listen(PORT, () => {
