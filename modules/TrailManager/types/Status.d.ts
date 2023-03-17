@@ -8,6 +8,7 @@ type Status = {
 }
 
 type Conditions = {
+    [index: string]: boolean,
     dry: boolean,
     mostlyDry: boolean,
     muddy: boolean,

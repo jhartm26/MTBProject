@@ -69,46 +69,22 @@ app.use(exprWinston.errorLogger({
 
 import { load } from 'cheerio';
 import MTBClient from './modules/TrailManager/lib/MTBClient';
+import TextParser from './modules/TrailManager/lib/TextParser';
+
+const t = new TextParser();
+t.parseTweetToStatus('Update: 3/2/2023 - Trails remain CLOSED at this time.').then(l => {
+    console.log(l);
+});
 
 app.get('/', async (_: Request, res: Response) => {
-    const t = new MTBClient();
-    await t.waitForInit();
-    await t.authorize();
-    let man = TrailManager.getInstance();
-
-    const startTime = Date.now();
-    await man.retrieveWeatherHistory('f83932bd-c276-11ed-9652-ed7fb304f9d7');
-    const endTime1 = Date.now();
-    console.log(`Weather history run in ${(endTime1 - startTime)/1000} seconds`);
-
-    const startTime1 = Date.now();
-    await man.retrieveStatusHistory('f83932bd-c276-11ed-9652-ed7fb304f9d7');
-    const endTime2 = Date.now();
-    console.log(`Status history run in ${(endTime2 - startTime1)/1000} seconds`);
-
-    const startTime2 = Date.now();
-    await man.retrieveTrail('f83932bd-c276-11ed-9652-ed7fb304f9d7');
-    const endTime = Date.now();
-    console.log(`Retrieve trail run in ${(endTime - startTime2)/1000} seconds`);
-
-    console.log(`All 3 functions run in ${(endTime - startTime)/1000} seconds`);
+    // const t = new MTBClient();
+    // await t.waitForInit();
+    // await t.authorize();
+    // let man = TrailManager.getInstance();
+    // const trail = await man.retrieveTrail('f83932bd-c276-11ed-9652-ed7fb304f9d7');
+    // console.log(trail);
+    // console.log(await t.updateTrail(trail));
     res.status(200).sendFile(path.join(__dirname, './public/html/index.html'));
-
-    try {
-        fs.writeFileSync('test.json', (await axios.get('https://www.mtbproject.com')).data);
-        const $ = load((await axios.get('https://www.mtbproject.com')).data);
-        const token = $('input[name="_token"]').val();
-        // console.log(await axios.post('https://www.mtbproject.com/conditions/trail/update', {
-        //     'checkin-time': undefined,
-        //     img: 'yellow',
-        //     condition: undefined,
-        //     _token: token,
-        //     id: '7018919'
-        // }));
-    }
-    catch (err) {
-        console.error(err);
-    }
 });
 
 app.listen(PORT, () => {

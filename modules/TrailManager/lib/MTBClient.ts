@@ -2,25 +2,51 @@ import { Mutex } from 'async-mutex';
 import { Browser, Page } from 'puppeteer';
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import RecaptchaPlugin from 'puppeteer-extra-plugin-recaptcha';
 import UserAgent from 'user-agents';
 
+// For bypassing reCAPTCHA *PAID SERVICE THAT MAY NOT BE REQUIRED*
+// import RecaptchaPlugin from 'puppeteer-extra-plugin-recaptcha';
+// puppeteer.use(
+//     RecaptchaPlugin({
+//         provider: {
+//             id: '2captcha',
+//             token: process.env.CAPTCHA_API_KEY
+//         }
+//     })
+// );
+
 puppeteer.use(StealthPlugin());
-puppeteer.use(
-    RecaptchaPlugin({
-        provider: {
-            id: '2captcha',
-            token: process.env.CAPTCHA_API_KEY
-        }
-    })
-);
+
+const SelectorDict = {
+    Login: {
+        email: '#login-modal > div > div > div.modal-body > div > div.login-signup-block > form:nth-child(7) > div:nth-child(1) > input',
+        password: '#login-modal > div > div > div.modal-body > div > div.login-signup-block > form:nth-child(7) > div:nth-child(2) > input',
+        submit: 'form[action="https://www.mtbproject.com/auth/login/email"] > button'
+    },
+    UpdatePage: {
+        Dials: {
+            green: '#conditions-modal > div.row.gray-block > div > div.dials > div.dial.green > input',
+            yellow: '#conditions-modal > div.row.gray-block > div > div.dials > div.dial.yellow > input',
+            red: '#conditions-modal > div.row.gray-block > div > div.dials > div.dial.red > input'
+        },
+        Conditions: {
+            dry: '#conditions-modal > div:nth-child(4) > div > div.form-group.tighter.buttons > a.btn.btn-sm.btn-transparent.suggestion.suggestion-modal.suggestion-0',
+            mostlyDry: '#conditions-modal > div:nth-child(4) > div > div.form-group.tighter.buttons > a.btn.btn-sm.btn-transparent.suggestion.suggestion-modal.suggestion-3' ,
+            muddy: '#conditions-modal > div:nth-child(4) > div > div.form-group.tighter.buttons > a.btn.btn-sm.btn-transparent.suggestion.suggestion-modal.suggestion-1',
+            someMud: '#conditions-modal > div:nth-child(4) > div > div.form-group.tighter.buttons > a.btn.btn-sm.btn-transparent.suggestion.suggestion-modal.suggestion-4',
+            snowy: '#conditions-modal > div:nth-child(4) > div > div.form-group.tighter.buttons > a.btn.btn-sm.btn-transparent.suggestion.suggestion-modal.suggestion-2',
+            icy: '#conditions-modal > div:nth-child(4) > div > div.form-group.tighter.buttons > a.btn.btn-sm.btn-transparent.suggestion.suggestion-modal.suggestion-5',
+            fallenTrees: '#conditions-modal > div:nth-child(4) > div > div.form-group.tighter.buttons > a.btn.btn-sm.btn-transparent.suggestion.suggestion-modal.suggestion-6',
+        },
+        submit: '#submit-modal'
+    }
+};
 
 function timeout(ms: number) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 export default class MTBClient {
-
     private username_: string = process.env.MTB_USER || 'kentstatereview@gmail.com';
     private password_: string = process.env.MTB_PASS || '1234567890';
     private userAgent_: UserAgent;
@@ -29,52 +55,94 @@ export default class MTBClient {
     private page_: Page;
 
     private ready_ = false;
+    private authorized_ = false;
 
     constructor() { 
         this.userAgent_ = new UserAgent();
     }
 
     public async waitForInit() {
-        this.browser_ = await puppeteer.launch({ headless:false });
+        this.browser_ = await puppeteer.launch();
         this.page_ = await this.browser_.newPage();
         await this.page_.setUserAgent(this.userAgent_.random().toString());
         this.ready_ = true;
     }
 
     public async authorize() {
-        const emailInputSelector = 'form[action="https://www.mtbproject.com/auth/login/email"] > div > input[type="email"]';
-        const passwordInputSelector = 'form[action="https://www.mtbproject.com/auth/login/email"] > div > input[type="password"]';
-        const loginButtonSelector = 'form[action="https://www.mtbproject.com/auth/login/email"] > button';
+        if (this.ready_) {
+            await this.page_.goto('https://www.mtbproject.com/');
 
-        // console.log(this);
-        await this.page_.goto('https://www.mtbproject.com/');
+            await this.page_.click('a[data-target="#login-modal"]');
 
-        // console.log(await this.page_.solveRecaptchas());
-        await this.page_.click('a[data-target="#login-modal"]');
-        await this.page_.type(emailInputSelector, this.username_, { delay: 23 });
-        await this.page_.type(passwordInputSelector, this.password_, { delay: 103 });
+            await timeout(1500);
 
-        console.log(await this.page_.solveRecaptchas());
+            await this.page_.waitForSelector(SelectorDict.Login.email);
+            await this.page_.focus(SelectorDict.Login.email);
+            await this.page_.type(SelectorDict.Login.email, this.username_, { delay: 87 });
 
-        try {
-            await Promise.all([
-                this.page_.waitForNavigation(),
-                this.page_.click(loginButtonSelector)
-            ]);
+            await this.page_.waitForSelector(SelectorDict.Login.password);
+            await this.page_.focus(SelectorDict.Login.password);
+            await this.page_.type(SelectorDict.Login.password, this.password_, { delay: 103 });
+
+            try {
+                await Promise.all([
+                    this.page_.waitForNavigation(),
+                    this.page_.click(SelectorDict.Login.submit)
+                ]);
+
+                // TODO: Add a validation check to ensure we are logged in
+                this.authorized_ = true;
+            }
+            catch (err) {
+                console.error(err);
+            }
         }
-        catch (err) {
-            console.error(err);
+        else 
+            throw new Error('Not initialized! `waitForInit()` must be run and complete on this object before it is usable');
+    }
+
+    public async updateTrail(trail: Trail): Promise<boolean> {
+        if (this.authorized_) {
+            const trailStatus = trail.status as Status;
+            await this.page_.goto(`https://www.mtbproject.com/trail/${trail.mtbID}`);
+
+            await this.page_.click('a[data-target="#conditions-modal"]');
+
+            await timeout(1500);
+
+            await this.page_.waitForSelector(SelectorDict.UpdatePage.submit);
+
+            switch(trailStatus.mtbStatus) {
+                case 'Bad / Closed':
+                    await this.page_.click(SelectorDict.UpdatePage.Dials.red);
+                    break;
+                case 'Minor Issues':
+                    await this.page_.click(SelectorDict.UpdatePage.Dials.yellow);
+                    break;
+                case 'All Clear':
+                    await this.page_.click(SelectorDict.UpdatePage.Dials.green);
+            }
+
+            for (const key of Object.keys(trailStatus.conditions)) {
+                if (trailStatus.conditions[key] === true)
+                    await this.page_.click((SelectorDict.UpdatePage.Conditions as any)[key]);
+            }
+
+            try {
+                await Promise.all([
+                    this.page_.waitForNavigation(),
+                    this.page_.click(SelectorDict.UpdatePage.submit)
+                ]);
+
+                // TODO: Add validation to ensure result was uploaded correctly
+                return true;
+            }
+            catch (err) {
+                console.error(err);
+                return false;
+            }
         }
-        // await this.page_.waitForNavigation();
-        await this.page_.screenshot({path: 'screenshot.png', fullPage: true });
-        // console.log(loginButton);
-        // await loginButton.click();
-        
-        // const emailInput = await this.page_.waitForSelector('input[type="email"]');
-        // console.log(emailInput);
-        // await emailInput.evaluate(el => {
-        //     console.log(el);
-        //     console.log('Teehee');
-        // });
+        else
+            throw new Error('Not authorized! `authorize()` must be run and complete on this object before it is usable');
     }
 }
