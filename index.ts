@@ -72,7 +72,7 @@ import MTBClient from './modules/TrailManager/lib/MTBClient';
 import TextParser from './modules/TrailManager/lib/TextParser';
 
 const t = new TextParser();
-t.parseTweetToStatus('Update: 3/2/2023 - Trails remain CLOSED at this time.').then(l => {
+t.parseTweetToStatus('Closed, even though there is snow on the ground. The trail remains unrideable. The ground is very saturated and not frozen.').then(l => {
     console.log(l);
 });
 
