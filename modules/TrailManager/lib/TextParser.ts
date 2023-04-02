@@ -1,6 +1,12 @@
 import { AxiosResponse } from 'axios';
 import { Configuration, CreateCompletionResponse, OpenAIApi } from 'openai';
+import path from 'path';
+import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import crypto from 'crypto';
+import winston from 'winston';
+import { Mutex } from 'async-mutex';
+
+import GmailClient from '../../GmailClient';
 import sqlExecute from '../../SQLInterface';
 
 type JSONRes = {
@@ -34,13 +40,66 @@ const DavinciPrompt =
 export default class TextParser {
     private configuration_: Configuration;
     private openai_: OpenAIApi;
+    private logger_: winston.Logger;
+    private predictor_: ChildProcessWithoutNullStreams;
+    private predictorMutex_: Mutex;
+    private initialized_: boolean;
+    private errored_: boolean;
+    private errorMessage_: string;
+    private gmailClient_: GmailClient;
+    // const predictorProcess = spawn('python3', [path.join(__dirname, '../mlModels/predictOpen.py'), tweet]);
 
     constructor() {
+        this.gmailClient_ = new GmailClient();
+        this.predictorMutex_ = new Mutex();
         this.configuration_ = new Configuration({
             organization: process.env.OPENAI_ORG_ID,
             apiKey: process.env.OPENAI_API_KEY,
         });
         this.openai_ = new OpenAIApi(this.configuration_);
+        this.logger_ = winston.createLogger({
+            level: 'info',
+            format: winston.format.json(),
+            transports: [new winston.transports.File({
+                filename: 'parsing.log'
+            })]
+        });
+        this.predictorMutex_.acquire().then(() => {
+            this.predictor_ = spawn('python3', [path.join(__dirname, '../mlModels/v2/predictOpen.py')]);
+
+            const killPredictor = () => {
+                if (!this.predictor_.kill())
+                    this.logger_.error('Failed to kill child process, please manual kill');
+                process.exit(0);
+            };
+
+            process.on('uncaughtException', killPredictor);
+            process.on('SIGINT', killPredictor);
+            process.on('SIGTERM', killPredictor);
+
+            this.predictor_.on('error', (err) => {
+                console.error(err);
+                process.exit(1);
+            });
+
+            this.predictor_.stdout.once('data', data => {
+                if (data.toString().trim() === 'init') {
+                    this.initialized_ = true;
+                    this.predictor_.stderr.removeAllListeners();
+                }
+                else {
+                    this.errorMessage_ = 'Incorrect init message sent to console';
+                    this.errored_ = true;
+                }
+
+                this.predictorMutex_.release();
+            });
+
+            this.predictor_.stderr.once('data', data => {
+                this.errorMessage_ = data.toString();
+                this.errored_ = true;
+            });
+        });
     }
 
     private static createNewStatus(): Status {
@@ -133,91 +192,139 @@ export default class TextParser {
     ////////////////// OPENAI PARSING ROUTE ////////////////////////
 
     ////////////////// VANILLA PARSING ROUTE ////////////////////////
-    private async attemptVanillaParse(tweet: string) {
+    private attemptVanillaParse(tweet: string): Promise<{ vAttempt: Status, continueParse: boolean }> {
         // Lowercase and remove punctuation
-        const normalizedTweet = tweet.toLowerCase().replaceAll(/[!\"#\＄%&\'\(\)\*\+,-\./:;<=>\?@\[\\\]\^_`{\|}~]/g, '');
+        if (this.errored_ || !this.initialized_)
+            throw new Error(this.errorMessage_ || 'Failed to wait for initialization');
+        return new Promise(async (resolve, reject) => {
+            let result = TextParser.createNewStatus();
+            this.predictorMutex_.acquire().then(() => {
+                this.predictor_.stdout.once('data', async (data) => {
+                    try {
+                        const prediction = JSON.parse(data.toString().trim().replace(/\'/g, '"')
+                                                        .replace(/\\"/g, '\\\'').replace(/array\(/g, '')
+                                                        .replace(/\)/g, '').replace(/, dtype=".+?"/g, ''));
+                        this.logger_.log('info', 'OUR Prediction Information: ' + JSON.stringify(prediction));
 
-        let result = TextParser.createNewStatus();
+                        if (prediction.parseability < 0.85 && prediction.parseability > 0.35) {
+                            this.logger_.log('info', 'Prediction lacks confidence, attempting OpenAI route...');
+                            resolve({ vAttempt: undefined, continueParse: true });
+                        }
+                        else if (prediction.parseability <= 0.35) {
+                            this.logger_.log('info', 'Unparseable, skipping...');
+                            resolve({ vAttempt: undefined, continueParse: false });
+                        }
 
-        if (normalizedTweet.includes('open'))
-            result.open = true;
-        else if (normalizedTweet.includes('closed')) {
-            result.open = false;
-            result.danger = tweet;
-        }
+                        result.open = prediction.probabilities[0] >= 0.85 ? true : prediction.probabilities[0] <= 0.15 ? false : undefined;
+                        if (result.open === undefined) {
+                            this.logger_.log('info', 'Unexpected output or tweet could not be parsed for prediction, attempting OpenAI route...');
+                            this.logger_.log('info', prediction);
+                            resolve({ vAttempt: undefined, continueParse: prediction.parseability < 0.35 });
+                        }
+                        result.conditions = {
+                            dry: prediction.probabilities[1] >= 0.85 ? true : prediction.probabilities[1] <= 0.15 ? false : false,
+                            mostlyDry: prediction.probabilities[2] >= 0.85 ? true : prediction.probabilities[2] <= 0.15 ? false : false,
+                            muddy: prediction.probabilities[3] >= 0.85 ? true : prediction.probabilities[3] <= 0.15 ? false : false,
+                            someMud: prediction.probabilities[4] >= 0.85 ? true : prediction.probabilities[4] <= 0.15 ? false : false,
+                            snowy: prediction.probabilities[5] >= 0.85 ? true : prediction.probabilities[5] <= 0.15 ? false : false,
+                            icy: prediction.probabilities[6] >= 0.85 ? true : prediction.probabilities[6] <= 0.15 ? false : false,
+                            fallenTrees: prediction.probabilities[7] >= 0.85 ? true : prediction.probabilities[7] <= 0.15 ? false : false,
+                        };
 
-        if (result.open === undefined) return undefined;
+                        if (checkAllConditionsFalse(result.conditions) && result.open === true)
+                            result.mtbStatus = (await sqlExecute('SELECT UUID FROM mtb_statuses WHERE status = "All Clear"'))[0].UUID;
+                        else if (result.open === true)
+                            result.mtbStatus = (await sqlExecute('SELECT UUID FROM mtb_statuses WHERE status = "Minor Issues"'))[0].UUID;
+                        else if (result.open === false)
+                            result.mtbStatus = (await sqlExecute('SELECT UUID FROM mtb_statuses WHERE status = "Bad / Closed"'))[0].UUID;
 
-        result = await this.parseConditions(normalizedTweet, result);
+                        this.logger_.log('info', 'Final parsed result: ' + JSON.stringify(result));
+        
+                        resolve({ vAttempt: result, continueParse: false });
+                    }
+                    catch (err) {
+                        console.error(err.toString().trim());
+                        reject(err);
+                    }
 
-        return result;
-    }
+                    this.predictor_.stderr.removeAllListeners();
+                    this.predictorMutex_.release();
+                });
 
-    private async parseConditions(nTweet: string, status: Status): Promise<Status> {
-        const checkForSnow = (str: string) => {
-            let result = false;
-            if (str.includes('snow')) result = true;
-            if (str.search(/((is)((n't)|( not)))|(not?)([ \r\n\t]+snowy?i?n?g?)/g) !== -1) result = false;
-            return result;
-        };
+                this.predictor_.stderr.once('data', (data) => {
+                    console.error(data.toString().trim());
+                    reject(new Error(data.toString().trim()));
+                });
 
-        const checkForMud = (str: string) => {
-            let result = false;
-            if (str.includes('mud')) result = true;
-            if (str.search(/((is)((n't)|( not)))|(not?)([ \r\n\t]+mud(dy)?)/g) !== -1) result = false;
-            return result;
-        };
-
-        const checkForIce = (str: string) => {
-            let result = false;
-            if (str.includes('ice') || str.includes('froze')) result = true;
-            if (str.search(/((is)((n't)|( not)))|(not?)([ \r\n\t]+froze(n)?)/g) !== -1) result = false;
-            if (str.search(/((is)((n't)|( not)))|(not?)([ \r\n\t]+ice)/g) !== -1) result = false;
-            return result;
-        };
-
-        const checkForTrees = (str: string) => {
-            let result = false;
-            if (str.search(/((fall(en)?)|(fell))+[ \r\n\t]+(trees?)/g) !== -1) result = true;
-            if (str.search(/(trees?)((have)|(are)|(did))?[ \r\n\t]+((fall(en)?)|(fell))?/g)) result = true;
-            if (str.search(/((is)((n't)|( not)))|(not?)([ \r\n\t]+)(trees?)((have)|(are)|(did))?[ \r\n\t]+((fall(en)?)|(fell))?/) !== -1) result = false;
-            if (str.search(/((is)((n't)|( not)))|(not?)([ \r\n\t]+)((fall(en)?)|(fell))+[ \r\n\t]+(trees?)/)) result = false;
-            return result;
-        };
-
-        const isMuddy = checkForMud(nTweet);
-
-        status.conditions = {
-            dry: status.open && !isMuddy,
-            mostlyDry: false,
-            muddy: status.open ? false : isMuddy,
-            someMud: status.open ? isMuddy : false,
-            snowy: checkForSnow(nTweet),
-            icy: checkForIce(nTweet),
-            fallenTrees: checkForTrees(nTweet)
-        };
-
-        if (checkAllConditionsFalse(status.conditions) && status.open === true)
-            status.mtbStatus = (await sqlExecute('SELECT UUID FROM mtb_statuses WHERE status = "All Clear"'))[0].UUID;
-        else if (status.open === true)
-            status.mtbStatus = (await sqlExecute('SELECT UUID FROM mtb_statuses WHERE status = "Minor Issues"'))[0].UUID;
-        else if (status.open === false)
-            status.mtbStatus = (await sqlExecute('SELECT UUID FROM mtb_statuses WHERE status = "Bad / Closed"'))[0].UUID;
-
-        return status;
+                this.predictor_.stdin.write(tweet + '\n', (err) => {
+                    if (err)
+                        this.logger_.error(err.toString().trim());
+                });
+            });
+        });
     }
     ////////////////// VANILLA PARSING ROUTE ////////////////////////
 
+    public waitForInit(): Promise<void> {
+        return new Promise(async (resolve, reject) => {
+            try {
+                await this.gmailClient_.waitForInit();
+            }
+            catch (err) {
+                console.error(err);
+                reject(err);
+            }
+            const t = setInterval(() => {
+                if (this.initialized_) {
+                    clearInterval(t);
+                    resolve();
+                }
+                if (this.errored_)
+                    reject(new Error(this.errorMessage_));
+            }, 5);
+        });
+    }
+
     public async parseTweetToStatus(tweet: string): Promise<Status> {
+        this.logger_.log('info', `Parsing tweet: "${tweet}"`);
         try {
-            const vAttempt = this.attemptVanillaParse(tweet);
-            if (vAttempt !== undefined)
+            const { vAttempt, continueParse } = await this.attemptVanillaParse(tweet);
+            if (vAttempt !== undefined) {
+                vAttempt.danger = tweet;
+                await this.gmailClient_.sendMessage('Parsed Vanilla Result', 
+                `Received tweet "${tweet}" and parsed with the following result:\n\n${JSON.stringify(vAttempt, null, 4)}`,
+                'jgraygo@kent.edu');
                 return vAttempt;
+            }
+            await this.gmailClient_.sendMessage('Vanilla Attempt Failed', 
+            `Failed to parse tweet "${tweet}" using the vanilla route, please add to model training`,
+            'jgraygo@kent.edu');
             
-            const res = await this.submitTweet(tweet);
-            const json = this.convertDavinciToJSON(res);
-            if (json) json.tweet = tweet;
-            return await this.parseJSONRes(json);
+            if (continueParse) {
+                try {
+                    const res = await this.submitTweet(tweet);
+                    const json = this.convertDavinciToJSON(res);
+                    this.logger_.log('info', 'OpenAI response: ' + JSON.stringify(json));
+                    if (json) json.tweet = tweet;
+                    const result = await this.parseJSONRes(json);
+                    this.logger_.log('info', 'Final result: ' + JSON.stringify(result));
+                    return result;
+                }
+                catch {}
+            }
+
+            if (continueParse) {
+                this.logger_.log('info', 'Tweet could not be parsed, sending for error handling');
+                await this.gmailClient_.sendMessage('Parse Totally Failed', 
+                `Failed to parse tweet "${tweet}" using the <b>ALL</b> routes, please add to model training`,
+                'jgraygo@kent.edu');
+            }
+            else
+                await this.gmailClient_.sendMessage('Tweet flagged as noparse', 
+                `Failed to parse tweet "${tweet}", but tweet was flagged as 'noparse'. Please validate until the model is trained`,
+                'jgraygo@kent.edu');
+
+            return undefined;
         }
         catch (err) {
             console.error(err);

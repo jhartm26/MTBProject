@@ -75,9 +75,7 @@ export default class TrailManager {
         }
     }
 
-    public async updateTrailStatus(trailUUID: string, open: boolean,
-                                   danger: string, status: MTBStatus,
-                                   conditions: Conditions): Promise<void> {
+    public async updateTrailStatus(trailUUID: string, status: Status): Promise<void> {
         try {
             await TrailManager.execute_(async () => {
                 const trails = await sqlExecute(`SELECT weather, status,
@@ -111,14 +109,7 @@ export default class TrailManager {
                     createdOn: new Date()
                 };
 
-                const newStatus: Status = {
-                    UUID: crypto.randomUUID(),
-                    open,
-                    danger,
-                    createdOn: new Date(),
-                    mtbStatus: status.UUID,
-                    conditions
-                };
+                const newStatus = status;
 
                 await sqlExecute(`INSERT INTO weather (UUID, last_reported_temperature, precipitation, wind, notes, created_on) 
                                   VALUES (?, ?, ?, ?, ?, ?)`,
@@ -134,10 +125,12 @@ export default class TrailManager {
                 await sqlExecute('UPDATE trails SET weather = ?, status = ?, last_update = ? WHERE UUID = ?',
                                  [newWeather.UUID, newStatus.UUID, new Date(), trailUUID]);
 
-                await sqlExecute(`INSERT INTO weather_archive (archived_on, trail_UUID, weather_UUID) VALUES 
-                                  (?, ?, ?)`, [new Date(), trailUUID, lastWeatherUUID]);
-                await sqlExecute(`INSERT INTO status_archive (archived_on, trail_UUID, status_UUID) VALUES 
-                                  (?, ?, ?)`, [new Date(), trailUUID, lastStatusUUID]);
+                if (lastWeatherUUID)
+                    await sqlExecute(`INSERT INTO weather_archive (archived_on, trail_UUID, weather_UUID) VALUES 
+                                      (?, ?, ?)`, [new Date(), trailUUID, lastWeatherUUID]);
+                if (lastStatusUUID)
+                    await sqlExecute(`INSERT INTO status_archive (archived_on, trail_UUID, status_UUID) VALUES 
+                                      (?, ?, ?)`, [new Date(), trailUUID, lastStatusUUID]);
             });
         }
         catch (err) {
