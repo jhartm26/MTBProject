@@ -1,19 +1,7 @@
-import { Mutex } from 'async-mutex';
 import { Browser, Page } from 'puppeteer';
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import UserAgent from 'user-agents';
-
-// For bypassing reCAPTCHA *PAID SERVICE THAT MAY NOT BE REQUIRED*
-// import RecaptchaPlugin from 'puppeteer-extra-plugin-recaptcha';
-// puppeteer.use(
-//     RecaptchaPlugin({
-//         provider: {
-//             id: '2captcha',
-//             token: process.env.CAPTCHA_API_KEY
-//         }
-//     })
-// );
 
 puppeteer.use(StealthPlugin());
 
@@ -144,5 +132,9 @@ export default class MTBClient {
         }
         else
             throw new Error('Not authorized! `authorize()` must be run and complete on this object before it is usable');
+    }
+
+    public async kill() {
+        await this.browser_.close();
     }
 }

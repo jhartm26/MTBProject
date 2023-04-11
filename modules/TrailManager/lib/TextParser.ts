@@ -59,23 +59,16 @@ export default class TextParser {
         this.openai_ = new OpenAIApi(this.configuration_);
         this.logger_ = winston.createLogger({
             level: 'info',
-            format: winston.format.json(),
+            format: winston.format.combine(
+                winston.format.timestamp(),
+                winston.format.json(),
+            ),
             transports: [new winston.transports.File({
                 filename: 'parsing.log'
             })]
         });
         this.predictorMutex_.acquire().then(() => {
             this.predictor_ = spawn('python3', [path.join(__dirname, '../mlModels/v2/predictOpen.py')]);
-
-            const killPredictor = () => {
-                if (!this.predictor_.kill())
-                    this.logger_.error('Failed to kill child process, please manual kill');
-                process.exit(0);
-            };
-
-            process.on('uncaughtException', killPredictor);
-            process.on('SIGINT', killPredictor);
-            process.on('SIGTERM', killPredictor);
 
             this.predictor_.on('error', (err) => {
                 console.error(err);
@@ -101,6 +94,11 @@ export default class TextParser {
             });
         });
     }
+
+    public killPredictor = () => {
+        if (!this.predictor_.kill())
+            this.logger_.error('Failed to kill child process, please manual kill');
+    };
 
     private static createNewStatus(): Status {
         return {
@@ -292,7 +290,7 @@ export default class TextParser {
             if (vAttempt !== undefined) {
                 vAttempt.danger = tweet;
                 await this.gmailClient_.sendMessage('Parsed Vanilla Result', 
-                `Received tweet "${tweet}" and parsed with the following result:\n\n${JSON.stringify(vAttempt, null, 4)}`,
+                `Received tweet "${tweet}" and parsed with the following result:\n\n<pre>${JSON.stringify(vAttempt, null, 4)}</pre>`,
                 'jgraygo@kent.edu');
                 return vAttempt;
             }
@@ -308,6 +306,9 @@ export default class TextParser {
                     if (json) json.tweet = tweet;
                     const result = await this.parseJSONRes(json);
                     this.logger_.log('info', 'Final result: ' + JSON.stringify(result));
+                    await this.gmailClient_.sendMessage('Parsed OpenAI Result', 
+                    `Received tweet "${tweet}" and parsed with the following result:\n\n<pre>${JSON.stringify(result, null, 4)}</pre>`,
+                    'jgraygo@kent.edu');
                     return result;
                 }
                 catch {}

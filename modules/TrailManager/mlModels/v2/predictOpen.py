@@ -6,6 +6,10 @@ from joblib import load
 import contractions
 from spellchecker import SpellChecker
 
+from sklearn.model_selection import GridSearchCV
+from sklearn.feature_selection import SelectFromModel
+from sklearn.feature_extraction.text import TfidfVectorizer
+
 import nltk
 from nltk.corpus import wordnet, stopwords
 from nltk.tokenize import word_tokenize, RegexpTokenizer
@@ -77,7 +81,7 @@ def preprocess(str):
                      "isn't", 'aren', "doesn't"]
     s9 = []
     for w in s8:
-        if w.lower() not in stop_words or w in include_words:
+        if w.lower() not in stop_words or w.lower() in include_words:
             s9.append(w)
 
     # Rebuild the string
@@ -97,14 +101,21 @@ def getMaxIndex(data):
 
 def main():
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    clf = load(os.path.join(dir_path, 'openModel.joblib'))
-    vectorizer = load(os.path.join(dir_path, 'openModel.vectorizer.joblib'))
-    reducer = load(os.path.join(dir_path, 'openModel.reducer.joblib'))
+    clf: GridSearchCV = load(
+        os.path.join(dir_path, 'openModel.joblib')
+    )
+    vectorizer: TfidfVectorizer = load(
+        os.path.join(dir_path, 'openModel.vectorizer.joblib')
+    )
+    reducer: SelectFromModel = load(
+        os.path.join(dir_path, 'openModel.reducer.joblib')
+    )
     print('init')
     while (True):
         try:
+            arg = input()
             vec = reducer.transform(
-                vectorizer.transform([preprocess(input())])
+                vectorizer.transform([preprocess(arg)])
             )
             probs = clf.predict_proba(vec)
             result = {

@@ -14,8 +14,13 @@ sms.install();
 import winston from 'winston';
 import exprWinston from 'express-winston';
 
-import TrailManager from './modules/TrailManager/lib/TrailManager';
+import { load } from 'cheerio';
+
 import logger from './modules/logger';
+import TwitterClient from './modules/TwitterClient';
+import TrailExecutive from './modules/TrailManager';
+import sqlExecute from './modules/SQLInterface';
+import resPr from './modules/PrankResArr';
 
 declare global {
     interface Error {
@@ -34,6 +39,7 @@ app.use(exprWinston.logger({
         })
     ],
     format: winston.format.combine(
+        winston.format.timestamp(),
         winston.format.colorize(),
         winston.format.simple()
     ),
@@ -51,6 +57,7 @@ app.use(exprWinston.logger({
         })
     ],
     format: winston.format.combine(
+        winston.format.timestamp(),
         winston.format.colorize(),
         winston.format.json()
     ),
@@ -68,6 +75,7 @@ app.use(exprWinston.errorLogger({
         })
     ],
     format: winston.format.combine(
+        winston.format.timestamp(),
         winston.format.colorize(),
         winston.format.json()
     ),
@@ -78,31 +86,43 @@ app.use(exprWinston.errorLogger({
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 app.use(bodyParser.json({ limit: '50mb' }));
 
-import { load } from 'cheerio';
-import MTBClient from './modules/TrailManager/lib/MTBClient';
-import TextParser from './modules/TrailManager/lib/TextParser';
-import TextPreprocessor from './modules/TrailManager/lib/TextPreprocessor';
-import TwitterClient from './modules/TwitterClient';
-import TrailExecutive from './modules/TrailManager';
+let twitterClient = new TwitterClient();
+let trailExec = new TrailExecutive();
 
-const t = new TextParser();
-const te = new TrailExecutive();
-te.waitForInit().then(async () => {
-    const tc = new TwitterClient();
-    await tc.waitForInit();
-    const tweets = await tc.checkForNewUpdates('07f9cc6a-d0d7-11ed-9c67-fecbfd91dfac');
-    for (const tweet of tweets) {
-        await te.updateOnTweet(tweet, '07f9cc6a-d0d7-11ed-9c67-fecbfd91dfac');
+// Calls kill on tc and te, logs errors, and recreates them
+const rebuild = async (err: Error) => {
+    logger.error('The following error occurred:');
+    logger.error(err);
+    logger.error('Killing twitter client and trail executive...');
+    try {
+        await twitterClient.kill();
+        logger.error('Twitter client successfully killed...');
     }
-});
+    catch (killErr) {
+        logger.error(killErr);
+    }
 
-const AUTHORIZED_IPS = ['76.190.42.180', '24.239.82.238'];
+    try {
+        await trailExec.kill();
+        logger.error('Trail executive successfully killed...');
+    }
+    catch (killErr) {
+        logger.error(killErr);
+    }
 
-app.get('/', async (req: Request, res: Response) => {
-    let ip = req.header('x-forwarded-for');
-    if (!ip)
-        ip = req.socket.remoteAddress;
+    logger.error('Restarting twitter client and trail executive...');
+    twitterClient = new TwitterClient();
+    trailExec = new TrailExecutive();
 
+    await Promise.all([twitterClient.waitForInit(), trailExec.waitForInit()]);
+    logger.error('Successfully recreated Twitter and Trail executive.');
+};
+
+const AUTHORIZED_IPS = ['131.123.35.146', // Capstone Server IP
+                        '76.190.42.180', '24.239.82.238',
+                        '10.22.33.123'];
+
+app.get('/', async (_: Request, res: Response) => {
     res.status(200).sendFile(path.join(__dirname, './public/html/index.html'));
 });
 
@@ -111,11 +131,13 @@ app.get('/twitter-consortium', async (req: Request, res: Response) => {
     if (!ip)
         ip = req.socket.remoteAddress;
 
-    let $ = load(fs.readFileSync(path.join(__dirname, './public/html/twitters.html')));
-
-    const result = $.html().replaceAll('{{twitter}}', req.query.twitter as string);
-
-    res.status(200).send(result);
+    if (AUTHORIZED_IPS.includes(ip)) {
+        let $ = load(fs.readFileSync(path.join(__dirname, './public/html/twitters.html')));
+        const result = $.html().replaceAll('{{twitter}}', req.query.twitter as string);
+        res.status(200).send(result);
+    }
+    else
+        res.status(403).send('You do not have access to this\r\n');
 });
 
 app.post('/test/api/parse', async (req: Request, res: Response) => {
@@ -124,9 +146,34 @@ app.post('/test/api/parse', async (req: Request, res: Response) => {
         ip = req.socket.remoteAddress;
 
     if (AUTHORIZED_IPS.includes(ip))
-        res.status(200).send(await te.parseTweetToStatus(req.body?.tweet || req.query?.tweet));
+        res.status(200).send(await trailExec.parseTweetToStatus(req.body?.tweet || req.query?.tweet));
     else
-        res.status(403).send('You do not have access to this');
+        res.status(403).send('You do not have access to this\r\n');
+});
+
+app.post('/api/check-socials', async (req: Request, res: Response) => {
+    let ip = req.header('x-forwarded-for');
+    if (!ip)
+        ip = req.socket.remoteAddress;
+
+    if (AUTHORIZED_IPS.includes(ip)) {
+        const socialMediaUUIDs = await sqlExecute('SELECT UUID FROM social_media');
+        let num_updated = 0;
+        for (const { UUID } of socialMediaUUIDs) {
+            try {
+                const tweets = await twitterClient.checkForNewUpdates(UUID);
+                for (const tweet of tweets)
+                    if(await trailExec.updateOnTweet(tweet, UUID))
+                        num_updated++;
+            }
+            catch (err) {
+                await rebuild(err);
+            }
+        }
+        res.status(200).send(`Finished checking and updating! Updated ${num_updated} trails.\r\n`);
+    }
+    else
+        res.status(403).send('You do not have access to this\r\n');
 });
 
 app.use((_1: Request, _2: Response, next: NextFunction) => {
@@ -141,17 +188,42 @@ app.use((err: Error, req: Request, res: Response, _: NextFunction) => {
                          '/vodarticle/d03CCS.html', '/remote/fgt_lang', '/version',
                          '/.well-known/security.txt', '/sitemap.xml', '/owa/auth/x.js',
                          '/owa/auth/logon.aspx', '/ecp/Current/exporttool/microsoft.exchange.ediscovery.exporttool.application'];
-    if (urlsToPrank.includes(req.url.toLowerCase()))
-        res.status(200).send('Who are you that keeps visiting these strange endpoints?');
+    if (urlsToPrank.includes(req.url.toLowerCase()) || req.url.toLowerCase().includes('php') ||
+        req.url.toLowerCase().includes('db') || req.url.toLowerCase().includes('sql'))
+        res.status(200).send(`${resPr[Math.floor(Math.random() * resPr.length)]}\r\n`);
     else if (err.status === 404)
         res.status(404).send({ message: 'Page not found' });
     else
         res.status(500).send({ message: 'Unhandled exception has occurred' });
 });
 
-app.listen(PORT, () => {
-    logger.log({
-        level: 'info',
-        message: `Server listening on port ${PORT}`
+const killServer = async () => {
+    try {
+        await trailExec.kill();
+    }
+    catch (err) {
+        logger.error(err);
+    }
+    try {
+        await twitterClient.kill();
+    }
+    catch (err) {
+        logger.error(err);
+    }
+    logger.info('Gracefully stopped. Ending process...');
+    process.exit(0);
+};
+
+process.on('uncaughtException', killServer);
+process.on('SIGINT', killServer);
+process.on('SIGTERM', killServer);
+
+logger.info('Starting up, wait for initialization...');
+trailExec.waitForInit().then(async () => {
+    logger.info('Bot initialization complete! Wait for Twitter client to startup...');
+    await twitterClient.waitForInit();
+    logger.info('Twitter client is ready! Wait for app to listen...');
+    app.listen(PORT, () => {
+        logger.info(`Init complete! Server listening on port ${PORT}.`);
     });
 });

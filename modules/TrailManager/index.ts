@@ -26,12 +26,14 @@ export default class TrailExecutive {
                 }
             }
         }
-
     }
 
     public async parseTweetToStatus(tweet: string) {
         return await this.textParser_.parseTweetToStatus(tweet);
     }
 
-
+    public async kill() {
+        await this.mtbClient_.kill();
+        this.textParser_.killPredictor();
+    }
 }

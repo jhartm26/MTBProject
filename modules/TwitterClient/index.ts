@@ -1,32 +1,18 @@
 import { Browser, Page } from 'puppeteer';
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import UserAgent from 'user-agents';
 
 import sqlExecute from '../SQLInterface';
-
-import fs from 'fs';
-import path from 'path';
 
 import { load } from 'cheerio';
 
 puppeteer.use(StealthPlugin());
 
-function timeout(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 export default class TwitterClient {
-    private userAgent_: UserAgent;
-
     private browser_: Browser;
     private page_: Page;
 
     private ready_ = false;
-
-    constructor() { 
-        this.userAgent_ = new UserAgent();
-    }
 
     public async waitForInit() {
         this.browser_ = await puppeteer.launch({
@@ -46,15 +32,15 @@ export default class TwitterClient {
         this.ready_ = true;
     }
 
-    private async fetch(url: string, id: string) {
+    private async fetch(url: string) {
         if (!this.ready_) {
             await this.waitForInit();
         }
         await this.page_.goto(url, {waitUntil: 'networkidle2'});
-        return await this.page_.evaluate(id => document.getElementById('wid')
+        return await this.page_.evaluate(() => document.getElementById('wid')
                                                 .querySelector('iframe')
                                                 .contentWindow.document
-                                                .querySelector('body').innerHTML, id);
+                                                .querySelector('body').innerHTML);
     }
 
     public async checkForNewUpdates(socMedUUID: string) {
@@ -62,8 +48,7 @@ export default class TwitterClient {
             const sqlRes = await sqlExecute('SELECT page_id AS id, last_update AS lastUpdate FROM social_media WHERE UUID = ?', [socMedUUID]);
             const pageId = sqlRes[0].id;
             const lastUpdate = new Date(sqlRes[0].lastUpdate);
-            console.log(pageId);
-            const html = await this.fetch(`https://capstone4.cs.kent.edu/twitter-consortium?twitter=${pageId}`, pageId);
+            const html = await this.fetch(`https://capstone4.cs.kent.edu/twitter-consortium?twitter=${pageId}`);
             let $ = load(html);
             let tweets = [];
             for (const child of $($('section[aria-label="Timeline"]').children()[0]).children()) {
@@ -103,5 +88,9 @@ export default class TwitterClient {
             console.error(err);
             return undefined;
         }
+    }
+
+    public async kill() {
+        await this.browser_.close();
     }
 }
