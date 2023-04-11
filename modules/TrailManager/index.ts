@@ -16,7 +16,7 @@ export default class TrailExecutive {
     }
 
     public async updateOnTweet(tweet: string, accountUUID: string) {
-        const sep = await this.textPreprocessor_.assignTrails(tweet, accountUUID); // TODO: Combine the whole tweet if every part is assigned to the same trail
+        const sep = await this.textPreprocessor_.assignTrails(tweet, accountUUID);
         for (const tweet of Object.keys(sep)) {
             const status = await this.textParser_.parseTweetToStatus(tweet);
             if (status) {
@@ -30,6 +30,10 @@ export default class TrailExecutive {
 
     public async parseTweetToStatus(tweet: string) {
         return await this.textParser_.parseTweetToStatus(tweet);
+    }
+
+    public async assignTrails(tweet: string, accountUUID: string) {
+        return await this.textPreprocessor_.assignTrails(tweet, accountUUID);
     }
 
     public async kill() {

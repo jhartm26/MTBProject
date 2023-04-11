@@ -36,7 +36,7 @@ export default class TwitterClient {
         if (!this.ready_) {
             await this.waitForInit();
         }
-        await this.page_.goto(url, {waitUntil: 'networkidle2'});
+        await this.page_.goto(url, { waitUntil: 'networkidle2' });
         return await this.page_.evaluate(() => document.getElementById('wid')
                                                 .querySelector('iframe')
                                                 .contentWindow.document

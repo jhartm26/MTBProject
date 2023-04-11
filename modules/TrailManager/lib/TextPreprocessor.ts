@@ -12,13 +12,7 @@ export default class TextPreprocessor {
             });
         }
 
-        const sentences = text.split('.');
-        let sepped: string[] = [];
-        for (const sub of sentences) {
-            for (const subsub of sub.split('\n')) {
-                sepped.push(subsub);
-            }
-        }
+        const sepped = text.split('\n');
 
         let resultDict: any = {};
         for (let substr of sepped) {
@@ -30,14 +24,6 @@ export default class TextPreprocessor {
                         resultDict[substr].push({ name, uuid });
                     else if (substr.toLowerCase().replaceAll(/[ \r\t\n]/g, '').includes(name.toLowerCase().replaceAll(/[ \r\t\n]/g, '')))
                         resultDict[substr].push({ name, uuid });
-                    else {
-                        const splitname = name.split(' ');
-                        for (const n in splitname)
-                            if (substr.includes(n)) {
-                                resultDict[substr].push({ name, uuid });
-                                break;
-                            }
-                    }
                 }
                 if (resultDict[substr].length === 0)
                     resultDict[substr] = names;

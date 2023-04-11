@@ -58,41 +58,47 @@ export default class GmailClient {
 
     public async waitForInit(): Promise<void> {
         await this.authorize();
-        if (this.auth_)
+        if (this.auth_) {
+            this.auth_.forceRefreshOnFailure = true;
             this.gmail_ = google.gmail({ version: 'v1', auth: this.auth_ });
+        }
         else
             throw new Error('Failed to authorize Gmail');
     }
 
     public async sendMessage(subject: string, message: string, sendToEmail: string) {
-        if (this.auth_) {
-            const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
-            const messageParts = [
-                'From: Justin Beckwith <beckwith@google.com>',
-                `To: ${sendToEmail}`,
-                'Content-Type: text/html; charset=utf-8',
-                'MIME-Version: 1.0',
-                `Subject: ${utf8Subject}`,
-                '',
-                message
-            ];
-            const email = messageParts.join('\n');
-            const encodedEmail = Buffer.from(email)
-                                       .toString('base64')
-                                       .replace(/\+/g, '-')
-                                       .replace(/\//g, '_')
-                                       .replace(/=+$/, '');
+        try {
+            if (this.auth_) {
+                const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+                const messageParts = [
+                    'From: CAMBA Bot <cambabotksu@gmail.com>',
+                    `To: ${sendToEmail}`,
+                    'Content-Type: text/html; charset=utf-8',
+                    'MIME-Version: 1.0',
+                    `Subject: ${utf8Subject}`,
+                    '',
+                    message
+                ];
+                const email = messageParts.join('\n');
+                const encodedEmail = Buffer.from(email)
+                                        .toString('base64')
+                                        .replace(/\+/g, '-')
+                                        .replace(/\//g, '_')
+                                        .replace(/=+$/, '');
 
-            const res = await this.gmail_.users.messages.send({
-                userId: 'me',
-                requestBody: {
-                    raw: encodedEmail,
-                }
-            });
+                const res = await this.gmail_.users.messages.send({
+                    userId: 'me',
+                    requestBody: {
+                        raw: encodedEmail,
+                    }
+                });
 
-            return res;
+                return res;
+            }
+            else
+                throw new Error('Failed to authorize Gmail. Did you call waitForInit() first?');
         }
-        else
-            throw new Error('Failed to authorize Gmail. Did you call waitForInit() first?');
+        catch {
+        }
     }
 }

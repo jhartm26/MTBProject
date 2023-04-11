@@ -2,7 +2,6 @@ import express, { Request, Response, NextFunction } from 'express';
 import bodyParser from 'body-parser';
 import path from 'path';
 import dotenv from 'dotenv';
-import axios from 'axios';
 import fs from 'fs';
 dotenv.config();
 
@@ -123,7 +122,7 @@ const AUTHORIZED_IPS = ['131.123.35.146', // Capstone Server IP
                         '10.22.33.123'];
 
 app.get('/', async (_: Request, res: Response) => {
-    res.status(200).sendFile(path.join(__dirname, './public/html/index.html'));
+    res.status(200).sendFile(path.join(__dirname, './public/html/admin.html'));
 });
 
 app.get('/twitter-consortium', async (req: Request, res: Response) => {
@@ -197,32 +196,53 @@ app.use((err: Error, req: Request, res: Response, _: NextFunction) => {
         res.status(500).send({ message: 'Unhandled exception has occurred' });
 });
 
-const killServer = async () => {
+const killServer = async (exitCode: number=0) => {
+    let errorFlag = 0;
     try {
         await trailExec.kill();
     }
     catch (err) {
         logger.error(err);
+        errorFlag++;
     }
     try {
         await twitterClient.kill();
     }
     catch (err) {
         logger.error(err);
+        errorFlag++;
     }
-    logger.info('Gracefully stopped. Ending process...');
-    process.exit(0);
+
+    if (errorFlag === 0) {
+        logger.info('Gracefully stopped. Ending process...');
+        process.exit(exitCode);
+    }
+    else {
+        logger.error(`Stopped with ${errorFlag} errors`);
+        process.exit(1);
+    }
+        
 };
 
-process.on('uncaughtException', killServer);
+process.on('uncaughtException', () => killServer(1));
 process.on('SIGINT', killServer);
 process.on('SIGTERM', killServer);
 
-logger.info('Starting up, wait for initialization...');
-trailExec.waitForInit().then(async () => {
-    logger.info('Bot initialization complete! Wait for Twitter client to startup...');
-    await twitterClient.waitForInit();
-    logger.info('Twitter client is ready! Wait for app to listen...');
+logger.info('Starting up, wait for initialization of Bot and Twitter Client...');
+const promArr = [
+    trailExec.waitForInit().then(async () => {
+        logger.info('Bot initialization complete!');
+        console.log(
+            await trailExec.assignTrails('Royalview Trails OPEN. Red is good, Yellow has quite a few small puddles. Fallen Trees have been removed.',
+                                         '07f9cc6a-d0d7-11ed-9c67-fecbfd91dfac')
+        );
+    }),
+    twitterClient.waitForInit().then(() => {
+        logger.info('Twitter client is ready!');
+    })
+];
+
+Promise.all(promArr).then(() => {
     app.listen(PORT, () => {
         logger.info(`Init complete! Server listening on port ${PORT}.`);
     });
