@@ -10,7 +10,7 @@ const convert = async (toC: sqlObject): Promise<Status> => {
         open: toC.open,
         danger: toC.danger,
         createdOn: toC.created_on,
-        mtbStatus: (await sqlExecute('SELECT * FROM mtb_statuses WHERE UUID = ?', [toC.mtb_status]))[0].status,
+        mtbStatus: (await sqlExecute('SELECT * FROM mtb_statuses WHERE UUID = ?', [toC.mtb_status]))[0]?.status,
         conditions: {
             dry: toC.dry,
             mostlyDry: toC.mostly_dry,
@@ -175,9 +175,12 @@ export default class TrailManager {
         return await Promise.all(promArr);
     }
 
-    public async retrieveTrail(trailUUID: string): Promise<Trail> {
+    public async retrieveTrail(trailUUID: string, simple=true): Promise<Trail> {
         await TrailManager.mutex_.waitForUnlock();
         const res = (await sqlExecute('SELECT * FROM trails WHERE UUID = ?', [trailUUID]))[0];
+
+        if (simple)
+            return res;
 
         const result: Trail = {
             UUID: res.UUID,
@@ -193,6 +196,34 @@ export default class TrailManager {
                                        FROM weather WHERE UUID = ?`, [res.weather]))[0] as Weather,
             status: await convert((await sqlExecute('SELECT * FROM status WHERE UUID = ?', [res.status]))[0])
         };
+
+        return result;
+    }
+
+    public async retrieveAllTrails(simple=true): Promise<Trail[]> {
+        await TrailManager.mutex_.waitForUnlock();
+        const sqlRes = await sqlExecute('SELECT * FROM trails');
+
+        const result: Trail[] = simple ? sqlRes : [];
+        if (!simple) {
+            for (const res of sqlRes) {
+                const status = (await sqlExecute('SELECT * FROM status WHERE UUID = ?', [res.status]))[0];
+                result.push({
+                    UUID: res.UUID,
+                    mtbID: res.mtb_id,
+                    name: res.name,
+                    city: res.city,
+                    state: (await sqlExecute('SELECT * FROM states WHERE UUID = ?', [res.state]))[0] as State,
+                    centerLatitude: res.center_latitude,
+                    centerLongitude: res.center_longitude,
+                    lastUpdate: res.last_update,
+                    weather: (await sqlExecute(`SELECT UUID, last_reported_temperature AS lastReportedTemp, 
+                                            precipitation, wind, notes, created_on AS createdOn
+                                            FROM weather WHERE UUID = ?`, [res.weather]))[0] as Weather,
+                    status: status ? await convert(status) : null
+                });
+            }
+        }
 
         return result;
     }

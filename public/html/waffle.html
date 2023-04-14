@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<head>
+    <title>RoflWaffle</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tilt+Neon&display=swap');
+
+        html, body {
+            margin: 0;
+            height: 100%;
+        }
+
+        #spinner {
+            animation-name: spin, depth;
+            animation-timing-function: linear;
+            animation-iteration-count: infinite;
+            animation-duration: 10s;
+            text-align: center;
+            font-size: 15rem;
+        }
+
+        @keyframes spin {
+            from { transform: rotateY(0deg); }
+            to { transform: rotateY(-360deg); }
+        }
+
+        @keyframes depth {
+            0% { text-shadow: 0 0 black; }
+            25% { text-shadow: 1px 0 black, 2px 0 black, 3px 0 black, 4px 0 black, 5px 0 black, 6px 0 black, 7px 0 black, 8px 0 black, 9px 0 black, 10px 0 black, 11px 0 black, 12px 0 black, 13px 0 black, 14px 0 black, 15px 0 black, 16px 0 black, 17px 0 black, 18px 0 black, 19px 0 black, 20px 0 black, 21px 0 black, 22px 0 black, 23px 0 black, 24px 0 black, 25px 0 black, 26px 0 black, 27px 0 black, 28px 0 black, 29px 0 black, 30px 0 black, 31px 0 black, 32px 0 black, 33px 0 black, 34px 0 black, 35px 0 black, 36px 0 black, 37px 0 black, 38px 0 black, 39px 0 black, 40px 0 black, 41px 0 black, 42px 0 black, 43px 0 black, 44px 0 black, 45px 0 black, 46px 0 black, 47px 0 black, 48px 0 black, 49px 0 black, 50px 0 black, 51px 0 black, 52px 0 black, 53px 0 black, 54px 0 black, 55px 0 black, 56px 0 black, 57px 0 black, 58px 0 black, 59px 0 black, 60px 0 black, 61px 0 black, 62px 0 black, 63px 0 black, 64px 0 black, 65px 0 black, 66px 0 black, 67px 0 black, 68px 0 black, 69px 0 black, 70px 0 black, 71px 0 black, 72px 0 black, 73px 0 black, 74px 0 black, 75px 0 black; }
+            50% { text-shadow: 0 0 black; }
+            75% { text-shadow: -1px 0 black, -2px 0 black, -3px 0 black, -4px 0 black, -5px 0 black, -6px 0 black, -7px 0 black, -8px 0 black, -9px 0 black, -10px 0 black, -11px 0 black, -12px 0 black, -13px 0 black, -14px 0 black, -15px 0 black, -16px 0 black, -17px 0 black, -18px 0 black, -19px 0 black, -20px 0 black, -21px 0 black, -22px 0 black, -23px 0 black, -24px 0 black, -25px 0 black, -26px 0 black, -27px 0 black, -28px 0 black, -29px 0 black, -30px 0 black, -31px 0 black, -32px 0 black, -33px 0 black, -34px 0 black, -35px 0 black, -36px 0 black, -37px 0 black, -38px 0 black, -39px 0 black, -40px 0 black, -41px 0 black, -42px 0 black, -43px 0 black, -44px 0 black, -45px 0 black, -46px 0 black, -47px 0 black, -48px 0 black, -49px 0 black, -50px 0 black, -51px 0 black, -52px 0 black, -53px 0 black, -54px 0 black, -55px 0 black, -56px 0 black, -57px 0 black, -58px 0 black, -59px 0 black, -60px 0 black, -61px 0 black, -62px 0 black, -63px 0 black, -64px 0 black, -65px 0 black, -66px 0 black, -67px 0 black, -68px 0 black, -69px 0 black, -70px 0 black, -71px 0 black, -72px 0 black, -73px 0 black, -74px 0 black, -75px 0 black; }
+            100% { text-shadow: 0 0 black; }
+        }
+    </style>
+</head>
+<body style="height: 100%;">
+    <div style="display: flex; height: 50%; width: 100%; justify-content: center; align-items: center;">
+        <h1 id="spinner" style="font-family: 'Tilt Neon', sans-serif">Waffle</h1>
+    </div>
+</body>

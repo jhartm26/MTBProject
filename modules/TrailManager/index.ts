@@ -3,6 +3,13 @@ import MTBClient from './lib/MTBClient';
 import TextParser from './lib/TextParser';
 import TrailManager from './lib/TrailManager';
 
+export {
+    TrailManager,
+    TextPreprocessor,
+    MTBClient,
+    TextParser
+};
+
 export default class TrailExecutive {
     private textPreprocessor_ = new TextPreprocessor();
     private mtbClient_ = new MTBClient();

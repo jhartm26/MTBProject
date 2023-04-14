@@ -26,10 +26,12 @@ type JSONRes = {
 
 const checkAllConditionsFalse = (c: Conditions) => {
     for (const key of Object.keys(c)) {
-        if (c[key] === true)
-            return false;
-        if (c[key] === undefined)
-            return undefined;
+        if (!key.toLowerCase().includes('dry')) {
+            if (c[key] === true)
+                return false;
+            if (c[key] === undefined)
+                return undefined;
+        }
     }
     return true;
 };
