@@ -237,15 +237,14 @@ export default (app: Express) => {
             const id = req.body?.id || req.query?.id;
             const sqlRes = await sqlExecute('SELECT * FROM trails WHERE UUID = ?', [id]);
             if (sqlRes.length === 1) {
-                let values = sqlRes[0];
-                for (const key of Object.keys(values)) {
-                    if (values[key] !== req.body[key] && key !== 'UUID')
-                        values[key] = req.body[key];
-                }
+                let values = req.body;
+
+                console.log(req.body);
 
                 try {
+                    console.log([values.mtb_id || values.mtbID, values.name, values.city, values.state.UUID || values.state, values.center_latitude || values.centerLatitude, values.center_longitude || values.centerLongitude, id]);
                     await sqlExecute('UPDATE trails SET mtb_id = ?, name = ?, city = ?, state = ?, center_latitude = ?, center_longitude = ? WHERE UUID = ?',
-                                    [values.mtb_id, values.name, values.city, values.state.UUID, values.center_latitude, values.center_longitude, id]);
+                                    [values.mtb_id || values.mtbID, values.name, values.city, values.state || values.state.UUID, values.center_latitude || values.centerLatitude, values.center_longitude || values.centerLongitude, id]);
                     res.status(200).json({ success: true });
                 }
                 catch (err) {
@@ -319,6 +318,36 @@ export default (app: Express) => {
         catch (err) {
             res.status(500).json({ error: err.message });
         }
+    });
+
+    app.get('/rest/api/trails/status-history', async (req: Request, res: Response) => {
+        if (req.body?.id || req.query?.id) {
+            const id = req.body?.id || req.query?.id;
+            try {
+                const statusHistory = await trailManager.retrieveStatusHistory(id);
+                res.status(200).json(statusHistory);
+            }
+            catch (err) {
+                res.status(500).json({ error: err.message });
+            }
+        }
+        else
+            res.status(400).json({ error: 'You must specify a trail ID' });
+    });
+
+    app.get('/rest/api/trails/weather-history', async (req: Request, res: Response) => {
+        if (req.body?.id || req.query?.id) {
+            const id = req.body?.id || req.query?.id;
+            try {
+                const weatherHistory = await trailManager.retrieveWeatherHistory(id);
+                res.status(200).json(weatherHistory);
+            }
+            catch (err) {
+                res.status(500).json({ error: err.message });
+            }
+        }
+        else
+            res.status(400).json({ error: 'You must specify a trail ID' });
     });
 
     return app;

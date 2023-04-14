@@ -206,6 +206,12 @@ app.post('/rest/api/check-socials', async (_: Request, res: Response) => {
     res.status(200).json({ numberUpdated: num_updated });
 });
 
+app.get('/public/api/twitter-consortium', async (req: Request, res: Response) => {
+    let $ = load(fs.readFileSync(path.join(__dirname, './public/html/twitters.html')));
+    const result = $.html().replaceAll('{{twitter}}', req.query.twitter as string);
+    res.status(200).send(result);
+});
+
 
 app.get('/rest/api/heartbeat', (req: Request, res: Response) => {
     res.status(200).json({ state: serverStateFlag });

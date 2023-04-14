@@ -182,6 +182,7 @@ export default class TrailManager {
         if (simple)
             return res;
 
+        const status = (await sqlExecute('SELECT * FROM status WHERE UUID = ?', [res.status]))[0];
         const result: Trail = {
             UUID: res.UUID,
             mtbID: res.mtb_id,
@@ -194,7 +195,7 @@ export default class TrailManager {
             weather: (await sqlExecute(`SELECT UUID, last_reported_temperature AS lastReportedTemp, 
                                        precipitation, wind, notes, created_on AS createdOn
                                        FROM weather WHERE UUID = ?`, [res.weather]))[0] as Weather,
-            status: await convert((await sqlExecute('SELECT * FROM status WHERE UUID = ?', [res.status]))[0])
+            status: status ? await convert(status) : null
         };
 
         return result;
