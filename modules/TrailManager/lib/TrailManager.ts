@@ -70,8 +70,7 @@ export default class TrailManager {
             return t;
         }
         catch (err) {
-            console.error(err.response.data);
-            return undefined;
+            throw err.response.data;
         }
     }
 
@@ -134,7 +133,6 @@ export default class TrailManager {
             });
         }
         catch (err) {
-            console.error(err);
             throw err;
         }
     }

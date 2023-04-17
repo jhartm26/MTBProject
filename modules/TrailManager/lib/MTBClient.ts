@@ -2,6 +2,7 @@ import { Browser, Page } from 'puppeteer';
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import UserAgent from 'user-agents';
+import { Mutex } from 'async-mutex';
 
 puppeteer.use(StealthPlugin());
 
@@ -35,8 +36,9 @@ function timeout(ms: number) {
 }
 
 export default class MTBClient {
-    private username_: string = process.env.MTB_USER || 'kentstatereview@gmail.com';
-    private password_: string = process.env.MTB_PASS || '1234567890';
+    private username_: string = process.env.MTB_USER;
+    private password_: string = process.env.MTB_PASS;
+    private mutex_ = new Mutex();
     private userAgent_: UserAgent;
 
     private browser_: Browser;
@@ -58,6 +60,8 @@ export default class MTBClient {
 
     public async authorize() {
         if (this.ready_) {
+            await this.mutex_.waitForUnlock();
+            await this.mutex_.acquire();
             await this.page_.goto('https://www.mtbproject.com/');
 
             await this.page_.click('a[data-target="#login-modal"]');
@@ -73,16 +77,16 @@ export default class MTBClient {
             await this.page_.type(SelectorDict.Login.password, this.password_, { delay: 103 });
 
             try {
-                await Promise.all([
-                    this.page_.waitForNavigation(),
-                    this.page_.click(SelectorDict.Login.submit)
-                ]);
+                await this.page_.click(SelectorDict.Login.submit);
+                await this.page_.waitForNavigation();
 
                 // TODO: Add a validation check to ensure we are logged in
                 this.authorized_ = true;
+                this.mutex_.release();
             }
             catch (err) {
-                console.error(err);
+                throw err;
+                this.mutex_.release();
             }
         }
         else 
@@ -91,9 +95,13 @@ export default class MTBClient {
 
     public async updateTrail(trail: Trail): Promise<boolean> {
         if (this.authorized_) {
-            const trailStatus = trail.status as Status;
-            await this.page_.goto(`https://www.mtbproject.com/trail/${trail.mtbID}`);
+            await this.mutex_.waitForUnlock();
+            await this.mutex_.acquire();
 
+            const trailStatus = trail.status as Status;
+            await this.page_.goto(`https://www.mtbproject.com/trail/${trail.mtbID}`, { waitUntil: 'networkidle0' });
+
+            await this.page_.waitForSelector('a[data-target="#conditions-modal"]');
             await this.page_.click('a[data-target="#conditions-modal"]');
 
             await timeout(1500);
@@ -122,16 +130,19 @@ export default class MTBClient {
                     this.page_.click(SelectorDict.UpdatePage.submit)
                 ]);
 
+                this.mutex_.release();
+
                 // TODO: Add validation to ensure result was uploaded correctly
                 return true;
             }
             catch (err) {
-                console.error(err);
-                return false;
+                throw err;
+                this.mutex_.release();
             }
         }
-        else
+        else {
             throw new Error('Not authorized! `authorize()` must be run and complete on this object before it is usable');
+        }
     }
 
     public async kill() {

@@ -29,7 +29,7 @@ declare global {
     }
 }
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 3000;
 let app = express();
 let serverStateFlag = 0;
 
@@ -176,6 +176,32 @@ app.get('/twitter-consortium', async (req: Request, res: Response) => {
         res.status(403).send('You do not have access to this\r\n');
 });
 
+app.post('/private/api/check-socials', async (req: Request, res: Response) => {
+    let ip = req.header('x-forwarded-for');
+    if (!ip)
+        ip = req.socket.remoteAddress;
+
+    if (AUTHORIZED_IPS.includes(ip)) {
+        const socialMediaUUIDs = await sqlExecute('SELECT UUID FROM social_media');
+        let num_updated = 0;
+        for (const { UUID } of socialMediaUUIDs) {
+            try {
+                const tweets = await twitterClient.checkForNewUpdates(UUID);
+                for (const tweet of tweets)
+                    if(await trailExec.updateOnTweet(tweet, UUID))
+                        num_updated++;
+            }
+            catch (err) {
+                await rebuild(err);
+            }
+        }
+        res.status(200).json({ numberUpdated: num_updated });
+    }
+    else
+        res.status(403).send('You do not have access to this\r\n');
+});
+
+
 app.post('/test/api/parse', async (req: Request, res: Response) => {
     let ip = req.header('x-forwarded-for');
     if (!ip)
@@ -238,7 +264,6 @@ app.use((err: Error, req: Request, res: Response, _: NextFunction) => {
     else {
         if (err)
             logger.error(err);
-        console.error(err);
         res.status(500).send({ message: 'Unhandled exception has occurred' });
     }
 });
@@ -284,10 +309,6 @@ logger.info('Starting up, wait for initialization of Bot and Twitter Client...')
 const promArr = [
     trailExec.waitForInit().then(async () => {
         logger.info('Bot initialization complete!');
-        console.log(
-            await trailExec.assignTrails('Royalview Trails OPEN. Red is good, Yellow has quite a few small puddles. Fallen Trees have been removed.',
-                                         '07f9cc6a-d0d7-11ed-9c67-fecbfd91dfac')
-        );
     }),
     twitterClient.waitForInit().then(() => {
         logger.info('Twitter client is ready!');

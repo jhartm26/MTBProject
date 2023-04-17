@@ -29,7 +29,8 @@ export default class TrailExecutive {
             if (status) {
                 for (const { name, uuid } of sep[tweet]) {
                     await this.trailManager_.updateTrailStatus(uuid, status);
-                    return await this.mtbClient_.updateTrail(await this.trailManager_.retrieveTrail(uuid));
+                    const trail = await this.trailManager_.retrieveTrail(uuid, false);
+                    return await this.mtbClient_.updateTrail(trail);
                 }
             }
         }
